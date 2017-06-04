@@ -1,0 +1,135 @@
+﻿GSIL Example:
+
+Runtime consists of:
+
+Resource index: For now they're local strings used for immutables and accessors
+Local Store: An allocation of local variables numbered by 0-based index
+Arg Store: An allocation of passed parameter numbered by 0-based index
+Global Store: A collection of global objects numbered by 0-based index
+Function Store: A collection of function objects
+Working Stack: A working stack used for all operations
+
+
+GSIL:
+
+	Local Strings:
+	0: "connected"
+	1: "round"
+	2: "awardCount"
+	3: "stats"
+	4: "name"
+	5: "disconnect"
+	6: "init"
+	7: "n"
+
+	Global Objects:
+	0: level
+
+	System:
+	0:waittill
+	1:strlen
+	2:notify
+	3:isdefined
+
+	Local:
+	0:player
+	1:var1
+
+	onPlayerConnect()
+	{
+		for(;;) {
+			var1 = undefined;
+			level waittill( "connected", player );
+			var1 = player.name;
+			if (strlen(var1) > 50) {
+				player notify("disconnect");
+				continue;
+			}
+
+			player notify('init');
+
+			if (isDefined(player.n) && player.n > 0 && player.n == -3 || player.n == strlen(player.name) || player.name[0] == "c")
+				continue;
+		}
+	}
+
+
+locals:
+	[0] player
+	[1] var1
+	[2] temp: bool
+//player and var1
+resrv    2
+
+Offset0:
+
+//Set up var1
+ldund
+stloc L[1]
+
+//Load arguments
+ldstr R[0]
+ldlocr L[0]
+
+//Call Waittill
+ldg G[0]
+stself
+ncall S[0]
+pop
+
+//Set var1 to player.name
+ldloc L[0]
+ldstr R[4]
+acs
+stloc L[1]
+
+//Call strlen and compare to 50
+ldloc L[1]
+ncall S[1]
+ldci 50
+gt
+jf Offset1
+
+//Notify player then continue
+ldloc L[0]
+stself
+ldstr R[5]
+ncall S[0]
+jmp Offset0
+
+Offset0:
+//Notify player
+ldloc L[0]
+stself
+ldstr R[6]
+ncall S[2]
+
+//isDefined(player.n)
+
+ldloc L[0]
+ldstr R[7]
+acs
+call S[3]
+jt 
+stloc L[2]
+
+//player.n > 0
+ldloc L[0]
+ldstr R[7]
+acs
+ldci 0
+gt
+jf Offset2
+
+//player.n == -3
+ldloc L[0]
+ldstr R[7]
+acs
+ldci -3
+eq
+jf Offset2
+
+ldcb True
+
+Offset2:
+

@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<settingsobj xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <recent />
+  <program>notepad.exe</program>
+  <args>{0}</args>
+</settingsobj>>settingsobj>

@@ -1,0 +1,2695 @@
+GSC Compiler concept.
+
+To battle the never-ending issue not finding out the particular syntax error has
+plagued me for the entire experience of modding since beginning to end. The issue
+is that the console window does not give enough detailed information on a 
+failed script compile. Being as vague as "Syntax Error", literally. Reason being
+is that the console explicitly does not give detailed errors because of the
+game engine's production build configuration, MW2 specifically does not support modding,
+so no console, no extended debugging information including detailed syntax errors.
+
+The GSC compiler attempts to fully compile GSC code using the approprate
+stubs, generating impeccable syntax checking. Resolving runtime errors before
+they occur. Compilation provides executable code for runtime debugging,
+allow debugging to functions/threads.
+
+The compilation process:
+Tokenization process:
+Turning the the source file into meaningful chunks, like symbols, names, etc.
+
+DOM Generation: Perform non-symbol qualification, and generates a code graph that describes
+code structure.
+
+DOM Compilation/Validation: Performs symbol validation, resolving function and variable names by using
+generated DOM-Structures from different source files and supplied built-in functions/variables. This effectively
+returns the same structure in DOM-Generation but unresolved flags are cleared.
+
+Runtime Generation: Generations intermediate assembly language and address-space independent
+object files. 
+
+
+Vocabulary:
+Module: A gsc file.
+
+GSC script is very simple, syntax is similar to C but very limited, to keep it simple hopefully.
+One of the main differences:
+
+-No pointers, obviously. This also includes any feature that requires or makes use of pointers.
+-The only code directive is import.
+-Only post increment/decrement is supported.
+-No strong type declarations. No support for variable declarations either, not
+even javascript's 'var' to declare local variables. 
+-No strong function declarations (definitions), specifically no return type declarations
+in the signature of the function declaration.
+-No strict order symbol lookup. Meaning in C, functions and static/global data types must be
+referenced after their definition. References to variables and functions can be
+made before their definition.
+-No external declarations for functions or objects located in other scripts/modules.
+-No support for default parameters.
+-No classes or strongly typed structs, but dynamic structures are supported and can be treated like objects by
+calling "spawnstruct", then properties/member variables can be assigned by setting them.
+-No methods, but function can be used as methods on any object.
+-To call a function on an object as a method, simply call the function with the object
+before the function separated by whitespace.
+	<object> <function call>
+
+
+Things it does differently:
+-Variables can be of five types: Strings, integers, floats, boolean, structs, function pointers.
+-Support for function pointers. The C scope specifier '::' is used to reference functions. Referencing
+a function in the same module is done by using the scope specifier before the function indentifier.
+Referencing a function outside a module requires that the absolute path of the module of the function
+be included, using back slashes to separate directories, adding the scope specifier after the path
+of the module, then finally the name of the function or identifier. Not sure if paths have to be
+absolute, I've never tried referencing a function in a local module.
+-Function declarations. Function declarations are declared without a return type, or parameter
+types. They are, by code conventions, declared on the first column. If not, they'll be much
+harder to find if using regex (using the beginning of a line character '^').
+-Invoking function pointers are done by simply surrounding a variable in double squared brackets
+and followed by a parameter list in round parenthesis.
+[[funcptr]]()
+[[::func]]()
+[[getFunc]]()
+[[[[getfunc]]()]]()
+-Strings can be appended using + and += operators, Types allowed are strings and numbers/floats
+-Numbers can be operated on with the four basic arithmetic operators.
+-No hex I think
+-No special strings
+-No single quotes, no use of single quotes. Only double quotes. But I believe that they can be escaped.
+-Threading support. The runtime suggests that threads aren't actually machine-multi-threaded and that the
+execution runtime simply executes a stream of code without the "wait" call as an instanteous segment
+of code, advancing to the next thread when the current stream is done, or to elaborate, when
+a stream of code gets to a "wait" or "waittill" call, it switches to the next thread that hasn't started
+or was waiting. If the elapsed wait time for current thread is greater than the designted time to wait
+for the call "wait", it continues to execute the next stream of code, then switches to the next not-started
+or waiting thread and so on. After an entire set of threads are switched to and are all still waiting,
+the runtime sleeps until the earliest thread is ready. Very simple, very effective. Though I'm still
+wondering what real machine-multi-threaded things can be done to optimize threading.
+-Functions can be called on objects. Functions can reference the current object by using 'self'.
+-Messaging paradigm. Though not object oriented, threads synchronize by using the "waittill" function on
+an object, the code waits until the object receives the notification by explicity calling "notify" on the
+object. The runtime can keep track of waits by internally storing a message queue on an object.
+-Object deallocation in the runtime can be acheived through simple garbage allocation, keeping track of references
+on mutable objects.
+-All threads can be instantly terminated through object notification by explicity calling "endon" on the
+object that should cause the current thread to terminate on such notification.
+
+
+Code Document Object Model
+
+Module:
+	[<import directive>]
+	[<function declaration>]
+	[<constant assign>]
+
+<import directive>:
+	#include [<path0>\[ [ [<path1>] \<path2>\...] ]]<gsc_name>::<function_name>
+
+<function declaration>:
+	<function_name>([<param_name>[,<param_name2>[,...]]])
+	{
+	[statements]
+	}
+
+
+
+This expression can be evaluated into the following expression graph:
+
+var1 = object1.prop1["some" + 1 + "key"][var2 + 4].prop2 + func1("str" + func2("yeah"));
+
+=(v(var1), +(
+
+//a = b
+Assigment, Type: Assign, Left: a, Right: b
+//a + b
+Operator, Type: Add, Left: a, Right: b
+//a.b
+Deference, Target:a, Property: b
+//a[b]
+Indexer, Index: b
+//a(b)
+Call, FunctionReference: a, params: [expr, Type: VariableReference, Name: b]
+//
+
+statement
+{
+	Type: Assign
+
+	Left:
+		VariableReference(Content: var1)
+	Right:
+		Expression:
+		{
+			Type: Operator,
+			expression:
+				Operator
+				{
+					Type: Add
+
+					Left:
+						Expression:
+						{
+							Type: 
+						}
+				}
+		}
+}
+
+
+GSIL is gamescript IL used in runtime.
+
+GSC:
+pickTarget()
+{
+	min = 0;
+	last = undefined;
+	foreach (player in level.players)
+	{
+		if (!isDefined(player.pers["isBot"]) || !isAlive(player))
+			continue;
+		if (player.taken < min || !isDefined(last))
+		{
+			last = player;
+			min = player.taken;
+		}
+	}
+	if (isDefined(last))
+	{
+		last.taken++;
+		return last;
+	}
+	else
+	return undefined;
+}
+
+GSIL:
+
+;min, last
+Alloc 2
+Mov local+0, 2
+Mov local+1, undefined
+
+;counter +2, level.players +3, player +4
+Alloc 4
+Mov local+2, 0
+Mov reg1, @level
+Asc local+3, reg1, 'players'
+
+#0:
+Asc reg1, local+3, 'size'
+Cmp reg1, 0
+Jle #2
+
+Inc top+2
+#1
+
+Idx local+4, local+3, local+2
+
+Asc reg1, local+4, 'pers'
+Idx reg2, reg1, "isBot"
+
+Isd reg2
+Jz #0
+
+Alloc 1, local2
+Mov local2+0, local+4
+Call @isAlive, 1
+Cmp Rsr
+Jz #0
+
+
+
+Jmp #0
+#2:
+
+
+var1 = obj1.prop1.obj2[var1++] + (obj3[var2] + 5 / var3);
+
+identifier, it's not a keyword so it must be a variable, save it
+	skip whitespace
+	equal sign, this is an assignment\
+		create statement s1\
+		since we had an identifier, it is a variable reference.\
+		create a variable reference, the name is var1, local-dom-scope\
+		assign the variable reference the identifier we saved\
+		assign the variable reference as an expression as the left operand in s1
+		...
+
+HEOS parsing.
+
+Here we're focusing on current object parsing. Quite interesting, in this concept,
+we have a current-object denoting the current entity. If the current object
+is null, it means we haven't parsed anything in the current statement yet.
+
+When parsing in this manner, it utilizes what is called a higher-expression-
+override-stack. What this implies is that when parsing an expression, we may find
+ourselves to be part of an ever higher expression when coming across a token that
+implies such.
+In the example code below we first find the identifier
+objf. At this point we just assume that it's just a single expression, because we
+do not know anything further, we assume it is a reference to a variable. Now we
+push the 
+
+Then we come across an accessor punctuator. The accessor period assumes that're part
+of a larger expression called an accessor. An accessor as you know requires at least
+two expressions, the object you're accessing and the name of the property you are retreiving.
+At this point we only have the name of the object we're accessing, so now we can create
+this incomplete accessor expression, then assign the object to access with the current object,
+we push the the incomplete accessor expression into to higher expression override stack and clear
+the current object.
+
+Now we must change the current object into the new accessor expression, stating
+that all we've parsed so far is this logical expression that has no post-token
+dependencies. Basically, we have everything we need and we do not need to
+"push" anything(read further to know what I'm talking about.)
+We are not done with the statement yet, so from now we must be
+ready to assume and put ourselves into the probability that there are more
+higher expressions, our presumptuousness at this point is no different
+than it was at the beginning. Of course this could, at this point, generate an error
+if a semicolon proceeded the accessor expression, because an expression is not
+a statement, but this is irrelevant.
+
+Now we come across an equal sign. Now we definitely know that we're part of a
+higher expression, because we know for a fact that assignments have
+two expressions. Now to ensure that under no matter how much higher expressions
+we come across, we can always properly 'fill' our waiting higher expressions.
+
+Now we know we're in a statement, we have to use heos because we have not finished
+the entire expression requirements for the assignment operator, all we have is
+'objf.cool' for the left side. So now, we create an incomplete statement called s1,
+and push it onto heos. After that we clear the current object because current object
+is the left side of the assignment operation and is irrelevant to the right side,
+the side we are on right now.
+
+Now that we have an equal statement on heos, we come across obj1. Assume it's a simple
+expression, assign it as current and continue.
+
+Now we see an accessor, create an accessor expression, assume accessor mode and expect
+an identifier.
+
+Note that when a statement completes parsing, this may indicate stray identifiers.
+Accompany this will this error message: "Error, identifier needs an assignment"
+
+objf.cool = obj1.prop1.obj2[var1++] + (obj3[var2] + 5) / var3;
+
+
+Note: Have a 'consecutive' flag to indicate whether the current token immediately came after the previous one.
+This is useful for finding out increment operators.
+Fixed: Just implemented an internal consecutive symbol reader.
+
+
+Axioms:
+	Current is always complete.
+	Anything on the stack is not.
+
+t: objf
+current = null;
+current = new expr.varref(Name:'objf')
+
+t: .
+temp = new expr.accessor(TargetObject:current, TargetProperty: null);
+pushheos(temp)
+
+t: cool
+(under parsing rules for an accessor)
+heos.top.TargetProperty = 'cool'
+current = heos.pop()
+
+t: =
+temp = new expr.assign(Left: current, Src: null);
+current = null;
+
+t: obj1
+current = new expr.varref(Name: 'obj1')
+
+t: .
+temp = new expr.accessor(TargetObject: current, TargetProperty: null);
+heos.push(temp);
+current = null;
+
+t: prop1
+heos.top.TargetProperty = 'prop1'
+current = heos.pop();
+
+t: .
+temp = new expr.accessor(TargetObject: current, TargetProperty: null);
+heos.push(temp);
+current = null;
+
+t: prop2
+heos.top.TargetProperty = 'prop2'
+current = heos.pop();
+
+t: [
+temp = new expr.indexer(TargetArray: current, Index: null);
+heos.push(temp);
+current = null;
+
+t: var1
+current = new expr.varref(Name: 'var1')
+
+t:+
+temp = new expr.addop(left:current, right:null);
+heos.push(temp);
+current = null;
+
+//Another plus? Post increment -__-
+t:+
+temp = heos.top.left;
+heos.pop();
+current = new expr.pinc(Target:current);
+
+t:]
+heos.top.index = current;
+current = heos.pop();
+
+t:+
+temp = new expr.addop(Left: current, right: Null);
+heos.push(temp);
+current = null;
+
+t: (
+temp = new expr.group();
+heos.push(temp);
+current = null;
+
+t: obj3
+current = new expr.varref();
+
+t: [
+temp = new expr.indexer(TargetObject: current, Indexer: null)
+heos.push(temp);
+current = null;
+
+t: var2
+current = new expr.varref(Name: 'var2');
+
+t: ]
+heos.top.Indexer = Current;
+current = heos.pop();
+
+t: +
+temp = new expr.addop(Left: current, right: null);
+heos.push(temp);
+current = null;
+
+t: 5
+current = new expr.constant(Value: 5);
+
+t: )
+//Force wrapup, if this was before the 5, we can accurately say there needs to be a second operand for +
+heos.top.right = current;
+current = heos.pop();
+
+t: /
+temp = new expr.divop(left: current, right: null);
+heos.push(temp);
+current = null;
+
+t: var3
+current = new expr.varref(Name: 'var3')
+
+t: ;
+heos.top.right = current;
+current = heos.pop();
+heos.top.right = current;
+current = heos.pop();
+current now holds the statement.
+
+Another Example:
+level.onStartGameType = ::onStartGameType;
+
+t: level
+current = new expr.varref(Name: 'level')
+
+t: .
+temp = new expr.accessor(Target: current, Prop: null);
+heos.push(temp);
+current = null;
+
+t:onStartGameType
+heos.top.Prop = 'onStartGameType'
+current = heos.top.pop();
+
+t:=
+temp = new expr.assign(Left: current, right: null);
+
+
+Notes: Wait should be make #include commands? Where upon an #include we execute the designated
+script, so that its defined functions are brought into our scope. But then again there
+are external function pointers, which would require logical function lookup instead of
+executing a script as an include.
+
+
+Another one:
+h = level.blah + john.asd["uh"].lol + 3;
+
+t:h
+h
+
+t:=
+?, h=?
+
+t:level
+level, h=?
+
+t:.
+?, level.?, h=?
+
+t:blah
+level.blah, h=?
+
+t:+
+?, level.blah+?, h=?
+
+t:john
+john, level.blah+?, h=?
+
+t:.
+?, john.?, level.blah+?, h=?
+
+t:asd
+john.asd, level.blah+?, h=?
+
+t:[
+?, john.asd[?], level.blah+?, h=?
+
+t:"uh"
+"uh", john.asd[?], level.blah+?, h=?
+
+t:]
+john.asd["uh"], level.blah+?, h=?
+
+t:.
+?, john.asd["uh"]., level.blah+?, h=?
+
+t:lol
+john.asd["uh"].lol, level.blah+?, h=?
+
+t:;
+level.blah+john.asd["uh"].lol, h=?
+h=level.blah+john.asd["uh"].lol
+
+What's bugging about function calls is that a function call with a self object may
+be difficult to distinguish if the call is in a multi level
+expression list.
+
+Take this expression for example:
+a + b + c.d
+Now with a call:
+a + b + c.d call();
+Now more specific:
+(a + c + c.d) call();
+
+Since operators have late expression binding, in the first
+expression, the higher expression would be (a+b) + ?
+Even though c.d is a complete expression, late expression
+binding does not allow the expression to be the right operand
+yet.
+To conclude, self objects are specified by the current complete
+expression.
+
+
+Another problem, how do we detect this syntax error?
+
+{
+a = p.a + (o)};
+}
+
+(o), p.a+?,a=?
+hm well this one is easy. Make sure we don't have a complete expression
+and no unresolved expressions, implying that we shouldn't be inside
+any statement/expression.
+
+How do we detect this one?
+a = (p.a + h) + h);
+You would assume that since groups normally end when the top
+unresolved is a group expression and the token is a closing
+paranthesis, this is not true due to late binding. We
+cannot check the top as a group because the top unresolved
+is a binary operator still trying to find a right operand.
+
+h, (p.a+h)+?, a=?
+
+Since groups only have one expression, we only need to try
+to attempt to resolve once. Then we can
+a = ((p.a + h) + h);
+
+
+h,(p.a+h)+?,(?),a=?
+
+
+a = array[a + h)];
+
+a
+?,a=?
+array,a=?
+?    ,array[?] , a=?
+a    ,array[?] , a=?
+?    ,a+?      , array[?],a=?
+h    ,a+?      , array[?],a=?
+a+h  ,array[?] , a=?
+
+
+a = array[(a + h)];
+
+
+Another problem, external functions.
+We can call one like this
+
+level.prop[index] maps\gametypes\_rank::jesus("its cool");
+or
+level.prop[index] + maps\gametypes\_rank::jesus("its cool");
+
+How the lexicons work:
+At maps, we have a complete expression 'level.prop[index]', then
+we come across a simple identifier 'maps' For now it looks like
+this:
+
+level.prop[index] maps...
+
+Looks like maps is a function, we MUST assume this. So immediately
+push onto the Es a new call statement with self 'level.prop[index]'
+and function name 'maps'.
+
+\
+
+Now we see this, is this division? No, we can assume we're
+on a path qualifier because the cases when we call
+an external function with the path qualifier will always
+have the TUE as a function with a name. We can gracefully
+correct ourselves by taking out the TUE entry, taking it's
+name and adding it to a string list to build the path
+qualifier, set Ce back to the TUE-call-statement's Self.
+
+We must do this if we immediately assume an identifier following
+a complete expression is a function. We can't so scratch this whole
+thing.
+
+In actuality, we use both. 'Misinterpreted' function calls and variable references.
+Variable references are used when we're in the beginning of a statement or
+without a complete expression
+
+
+
+a = (5 + a) + level.pickins[good[1]] + (1)
+
+a
+?, a=?
+?,(?),a=?
+5,(?),a=?
+?,5+?,(?),a=?
+a,5+?,(?),a=?
+5+a,(?),a=?
+(5+a),a=?
+?,(5+a)+?,a=?
+
+
+
+NO LISTEN TO ME, THIS PROBLEM RIGHT HERE:
+
+level.yoyo[a + h)]
+
+Can be solved easily, when you encounter the ), simply
+say that since Ce isn't null, and I'm part of a binary
+expression or unary expression, I will always have
+late binding. So, "if I'm currently in a late bind
+and Ce isn't null, resolve now".
+
+h = a + 3 + 5;
+
+h
+?,h=?
+a,h=?
+?,a+?,h=?
+3,a+?,h=?
+a+3,h=?
+
+
+//TODO: Figure this out
+h = !level.str["sys"] + 4;
+
+j(kk(7,h[u])+6,a,);
+
+j,
+?,j(...)
+kk,j(...)
+?,kk(...),j(...)
+
+If statements:
+
+if (level.jesus[okay] thread yeah())
+{
+	a = 3;
+	h = 4;
+}
+
+t:if
+?,if(?)
+
+t:(
+?,if(?)
+//Started expressiones
+
+t:level
+level,if(?)
+
+t:.
+?,level.?,if(?)
+
+t:jesus
+level.jesus,if(?)
+
+t:[
+?,level.jesus[?],if(?)
+
+t:okay
+okay,level.jesus[?],if(?)
+
+t:]
+level.jesus[okay],if(?)
+
+t:thread
+?,level.jesus[okay] [thread] ?(?), if(?)
+
+t:yeah
+?,level.jesus[okay] [thread] yeah(?), if(?)
+
+t:(
+?,level.jesus[okay] [thread] yeah(?), if(?)
+//Started parameter list
+
+t:)
+level.jesus[okay] [thread] yeah(), if(?)
+
+t:)
+if(level.jesus[okay] [thread] yeah())
+pushCurrentExpression
+currentExpression = if(level.jesus[okay] [thread] yeah())
+
+
+Problem here:
+wait [[level.jesus[okay + (45 - 56) * 4] thread yeah() / 5]](jesus);
+
+At the "*", it is the first binary operator to
+consider whether to seal up the prepared binary
+expression between 'okay' and '(45 - 54)'. It does
+this by first checking whether it's a multi-symbol
+operator, it's obviously not because there's a space
+in front it. The issue here is that when it
+seals up the last binary operation, it defers
+so that the same area of code that invoked
+the ImmediateResolve() can branch again
+in the converse code block respective of
+where ImmediateResolve was located. The defer
+failed because it does the "look-ahead"
+for the next token to check for multi-symbol operators
+and does not get space, it gets nothing...for some reason.
+
+Actually it's working fine. It's just the function
+that retreives the consecutive symbols uses the
+current symbol as the first character. When we
+defer, current should stay the same but it doesn't
+because the Reader's internal token tracking
+advances sooner than our copy.
+
+Replaces defers with PutStore's doesn't work because
+PutStore will store the too-late token.
+
+*,\x20
+
+We read '*'
+Do some processesing
+Look ahead, grabbed \x20 and store it
+We have "* ", and is not what we're looking for
+We keep the \x20 by doing nothing
+We immediateResolve then defer
+
+See we can't defer correctly. Using putStore will
+make the problem more apparent.
+
+Fixed the problem by using GetConsecSymbols,
+and the internal consecutive string discarding
+makes it very easy not to worry about
+over-discarding.
+
+
+
+Conditional Statements
+
+
+Two events we really watch out for. The closing parenthesis when
+the expression stack is empty and the semi-colon for end
+of statements. These two events are key for building
+conditional statements.
+
+Let's review the parsing procedure with abridging expressions.
+
+for (iterator = object GetIterator(); isDefined(iterator); iterator.next())
+
+We encounter 'for' while EsEmpty and Ce == null. Good, we can push onto
+a new conditional statement by pushing Cs and assigning it the
+new conditional statement.
+
+Like strict parsing for function anatomies, we do the same for conditional
+statements and indicate whether we're ready to start parsing expressions
+by using ConditionalStatement::StartedConditionalExpression, and to
+further simplify the conditional anatomy building, we use
+ConditionalStatement::FinishedConditionalExpression to accurately
+determine whether we've finished building the condition part.
+
+After which, we control the two aforementioned things to watch out for,
+closing parenthesis on an empty expression stack and semi-colon for
+ending statements.
+
+For biconditional statements, the else keywords signifies that that last
+statement is a biconditional statement and that the follow statment/block
+is its converse clause.
+
+issue 1:
+{
+	if a
+		void;
+	else
+			void;
+		else
+			void;
+}
+
+issue 2:
+{
+	if a
+		if b
+			void
+		else
+			void
+	else
+		void;
+}
+
+The Issue 1: encountering the bicond of condition b is the problem.
+We have the "if a" stored in the SL of {}, we then encounter
+else. Else is valid because the Last statement in SL in {} is a bicond
+without a converse clause. We set the current statement as else, 
+so that the next single statement is binded immediately to it.
+But now we encountered a "if b" and have to push else onto the stack.
+We encounter void, now we immediately bind to b. The usually procedure
+aforementioned would be to add the half-complete bicond to the
+last pushed statement's statementlist. Our last statement on the stack
+is else and does NOT support statementlists.
+
+Why bother with such indiscrimination for special statement placeholders
+such as "else", whose only meaning respects an implicitly located statement?
+
+New approach:
+
+"else" re-sets the current statement to the last bicond and
+further statement setting will have to set. Another issue
+with this, when we encounter the "else" token. Actually
+this approach still has the same problem of resolving too early
+and going into the higher incorrect scope.
+
+Newer approach:
+Treat else as a conditional statement itself, but it's existence implies that we always have
+a bicond as the last statement in the statement list where "else" appeared.
+
+{
+	if a
+		void;
+	else
+		void;
+}
+
+t: {
+{}
+
+t: if a
+if a, {}
+
+t: void;
+if a: void, {}
+{if a:void}
+
+t:else
+if a:void|?, {}
+
+t: void
+if a:void|void, {}
+{if a:void|void}
+
+{
+	if (a)
+		void;
+	else
+		if (b)
+			void;
+		else
+			void;
+}
+
+t: if (a)
+SsPush(Cs);
+Cs = new BiConditionalStatement(new VariableReference("a"));
+
+t: void;
+Cs.SetStatement(Ce.AsStatement());
+temp = Cs;
+SsPop();
+Sl.Add(temp);
+
+t:else
+SsPush(Cs);
+Cs = new ConversePlaceHolder();
+
+t:if (b)
+SsPush(Cs)
+Cs = new BiConditionalStatement(new VariableReference("b"));
+
+t:void;
+Cs.SetStatement(Cs.AsStatement());
+temp = Cs;
+SsPop();
+Sl.Add(temp);
+
+t:else
+SsPush(Cs);
+Cs = new ConversePlaceHolder();
+
+
+t:void;
+Cs.SetStatement(Cs.AsStatement());
+temp = Cs;
+SsPop();
+Sl.Add(temp);
+
+{
+	if (P)
+		stmtP;
+	else
+		if (P2)
+			stmtP2;
+	stmpP3;
+	if (a)
+		if (b)
+			if (c) 
+				stmt1;
+			else
+				stmt2;
+		else
+			if (d)
+				stmt3;
+			else
+				stmt4;
+	else
+		stmt5;
+	stmt6;
+}
+
+t: {
+[{}, ?]
+
+t: if (P)
+[if (P), {}, ?]
+
+t: stmtP
+[if (P) (stmtP), {}, ?]
+
+t: else
+[else, if (P) (stmtP), {}, ?]
+
+t: stmtP2
+[else (stmtP2), if (P) (stmtP), {}, ?] ->
+[if (P) (stmtP) else (stmtP2), {}, ?] ->
+[{} sl:[if (P) (stmtP) else (stmtP2)], ?]
+
+t: stmtP3
+[{} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: if (a)
+[if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: if (b)
+[if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: if (c)
+[if (c), if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: stmt1
+[if (c) (stmt1), if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: else
+[else, if (c) (stmt1), if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: stmt2
+[else (stmt2), if (c) (stmt1), if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?] ->
+[if (c) (stmt1) else (stmt2), if (b), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?] ->
+[if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: else
+[else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: if (d)
+[if (d), else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: stmt3
+[if (d) (stmt3), else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: else
+[else, if (d) (stmt3), else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: stmt4
+[else (stmt4), if (d) (stmt3), else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?] ->
+[if (d) (stmt3) else (stmt4), else, if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]->
+[else (if (d) (stmt3) else (stmt4)), if (b) (if (c) (stmt1) else (stmt2)), if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]->
+[if (b)
+	(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4)),
+if (a), {} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]->
+[if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4)), 
+{} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]->
+
+t: else
+[else, if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4)), 
+{} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?]
+
+t: stmt5
+
+[else (stmt5), if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4)), 
+{} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?] ->
+[if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4))
+else (stmt5), 
+{} sl:[if (P) (stmtP) else (stmtP2), stmtP3], ?] ->
+[{} sl:
+[if (P) (stmtP) else (stmtP2), stmtP3,
+if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4))
+else (stmt5)
+], ?]
+
+t:stmt6
+
+[{} sl:
+[if (P) (stmtP) else (stmtP2), stmtP3,
+if (a)
+	if (b)
+		(if (c) (stmt1) else (stmt2)) else (if (d) (stmt3) else (stmt4))
+else (stmt5),
+stmt6
+], ?]
+
+t:}
+Done.
+
+
+
+{
+	if (d)
+		stmt0;
+	stmtA;
+	if (a)
+	{
+		foreach (b in c)
+			stmt1;
+		if (b)
+			stmt2;
+	}
+}
+
+t: {
+[{}, ??]
+
+t: if (a)
+[if (a), {}, ??]
+
+t: {
+[{}, if(a), {}, ??]
+
+t: foreach
+[foreach, {}, if (a), {}, ??]
+
+t: stmt1
+[foreach (stmt1), {}, if (a), {}, ??] ->
+[{} sl:[foreach (stmt1)], if (a), {}, ??] ->
+
+t: if (b)
+[if (b), {} sl:[foreach (stmt1)], if (a), {}, ??]
+
+t: stmt2
+[if (b) (stmt2), {} sl:[foreach (stmt1)], if (a), {}, ??]
+
+t: }
+//Clean up half-biconds
+[{} sl:[foreach (stmt1), if (b) (stmt2)], if (a), {}, ??]->
+[if (a) ({} sl:[foreach (stmt1), if (b) (stmt2)]), {}, ??]
+
+t: }
+//Clean up half-biconds
+[{} sl:[if (a) ({} sl:[foreach (stmt1), if (b) (stmt2)])], ??]
+
+Done.
+
+{
+	if (a)
+		if (b)
+			if (c)
+				stmt1;
+	stmt2;
+}
+
+t: {
+[{}, ??]
+
+t: if (a)
+[if (a), {}, ??]
+
+t: if (b)
+[if (b), if (a), {}, ??]
+
+t: if (c)
+[if (c), if (b), if (a), {}, ??]
+
+t: stmt1;
+[if (c) (stmt1), if (b), if (a), {}, ??]
+
+t:stmt2;
+ForceWrap:
+[if (c) (stmt1), if (b), if (a), {}, ??]->
+[if (b) (if (c) (stmt1)), if (a), {}, ??]->
+[if (a) (if (b) (if (c) (stmt1))), {}, ??]->
+[{} sl:[if (a) (if (b) (if (c) (stmt1)))], ??]
+[{} sl:[if (a) (if (b) (if (c) (stmt1))), stmt1], ??]
+
+Done.
+
+
+{
+	if (a)
+		if (b)
+			if (c)
+				stmt1;
+			else
+				stmt2;
+		else
+			stmt3;
+	else
+		stmt4;
+	stmt2;
+}
+
+
+t: {
+[{}, ??]
+
+t: if (a)
+[if (a), {}, ??]
+
+t: if (b)
+[if (b), if (a), {}, ??]
+
+t: if (c)
+[if (c), if (b), if (a), {}, ??]
+
+t: stmt1;
+[if (c) (stmt1), if (b), if (a), {}, ??]
+
+t: else
+[else, if (c) (stmt1), if (b), if (a), {}, ??]
+
+t: stmt2
+[if (c) (stmt1) else (stmt2), if (b), if (a), {}, ??] -> 
+
+
+Don't forget to check for empty statement stack errors
+when code assumes SsPk.
+
+
+{
+	if (a)
+		stmt1;
+	{
+		stmt2;
+	}
+}
+
+t:stmt1
+[if (a) (stmt1), {}, ?]
+
+t:{
+[{} sl:[if (a) (stmt1)], ?]
+
+{
+	if (a)
+		stmt1;
+	if (b)
+		stmt2;
+}
+
+	Don't forget to support constant expressions for switch-cases,
+After the case is finished, you could resolve and see if you get null
+or not. A null would indicate that there is an invalid non-constant
+expression/operation.
+	Also try to support named constants in cases, this would have to be
+done by the CA though.
+	Don't forget to immediate resolve when you need to when cases
+have deep expressions.
+
+
+TODO:
+Immediate resolves apply only when EsPk is .IsLooseBinding(). i.e.
+FIXED: Did it and it works.
+
+
+g[a + b.c
+
+g
+?,g[?]
+a,g[?]
+?,a+?,g[?]
+b,a+?,g[?]
+?,b.?,a+?,g[?]
+b.c,a+?,g[?]
+
+g[a = b
+
+g
+?,g[?]
+a,g[?]
+?,a=?,g[?]
+b,a=?,g[?]
+
+
+a = b = c;
+
+a
+?,a=?
+b,a=?
+?,b=?,a=?
+c,b=?,a=?
+
+Tokenizer seems to have this problem:
+
+a = .5/.6;
+
+We use stores and preemptive stores to help
+temporarily keep tokens in the liability of
+a failed inspection.
+
+Here, the slash followed by a period fails to parse correctly.
+What we want is a sequence containing the token slash and the
+token decimal. But instead we get a period token instead
+of a decimal, because of the flawed approach of peeking inspections,
+we never initiate an inspection to capture the decimal.
+
+Here is the supposed flow character by character
+
+/, ., 6
+
+First with the slash, we ready inspection for a comment.
+Instead we receive a period, we fallback and let parsing
+continue. We add the actual slash. Fixed, just did
+preempts for '.'.
+
+
+
+TODO: Wait, we seem to have problems with the packer. Mainly
+resource vars.
+FIXED: Just kept track of the last significant token and if it was a
+"%" we space out if we're on an identifier.
+
+HOOOOOOORAAAAY The compiler has what seems to be a fully
+capable syntax tree builder.
+
+Now we need to resolve contextes, but to do that we have
+act upon the tree as if we're wanting to compile into
+workable machine/byte code.
+
+We can't just check contextes and leave the tree as is.
+
+For example take a look at this:
+
+main(p1, p2, p3)
+{
+	foreach (i in p2)
+	{
+		p1 += 1;
+		j = p2;
+	}
+}
+
+We have three parameters,
+one inside foreach for
+the loop, and j since it was nowhere
+in the current block up to the
+parameters.
+
+How to store this information?
+
+
+
+
+
+GSIL Opcodes
+
+GSIL is a typical turing complete intermediate byte code language.
+The execution engine is stack based, meaning instead of traditional
+register based calculating, calculations are performed on a stack.
+
+For example:
+b = 4;
+c = 2;
+a = b - c;
+
+Can be serialized into typical register based language:
+;init globals
+sub  esp	 , 12
+mov  [esp-4] , 4	
+mov  [esp]	 , 2
+
+;move 4 into accumulator
+mov	 eax, [esp-4]
+;perform substraction, store in accumulator
+sub eax, [esp]
+;store result into c
+mov [esp-8], eax
+
+
+While this can also be serialzed into stack based il:
+
+push 4
+push 2
+padd 0
+
+in byte code
+
+0001 0100
+
+0001 0010
+
+0010 0010
+
+
+Converting this function to GSIL
+
+main()
+{
+	ui = spawnstruct();
+	c = 1;
+	a = c += ui [[::yeah]](c, "a");
+	diggindadancin = c % a + 1;
+}
+
+lpush_new
+lpush 1
+
+
+rflpush 0
+rpush_str "a"
+rpush_ptr [::yeah]
+rflpush 
+
+stacks:
+	rstack: register stack
+	lstack: local stack
+	cstack: call stack
+
+opcodes
+
+rpush_new: pushes new empty object onto the rstack
+rpush_i: pushes integer onto rstack
+rpush_str: pushes string onto rstack
+
+rflpush: copies the top of the lstack and pushes onto rstack
+rflpush: pops top of lstack and pushes onto rstack
+
+
+Context Analyzation:
+
+File "maps\foo.gsc":
+getCustomers()
+{
+	res = [];
+	foreach (c in level.customers)
+		if (c maps\checkers::isAlive())
+			res[res.size] = c;
+	return res;
+}
+
+File "maps\checkers.gsc"
+isAlive()
+{
+	return isDefined(self.breathing);
+}
+
+Problem: Variables that are used before setting
+their values. This will be nearly undetectable
+in the final pass.
+
+i.e.
+main()
+{
+	b = false;
+	if (b)
+		c += 1;
+	c = 0;
+}
+
+First pass on the first instance of c,
+we mark c as unresolved. On the second
+instance we mark it as resolved.
+
+TODO:
+
+	-Go back and detect assignments on constants
+not just assign
+
+	-Use enumerated results to determine varref
+	-Go back to assignments on new left vars to
+	use the new enumearted result type
+[done all]
+TODO:
+	Add global functions and global constants
+[done]
+TODO:
+	Emit warnings with selves are self-based calls.
+	i.e. obj call() call2();
+[done]
+
+TODO:
+	Functions with reference/varg modifiers.
+	Update: We also added __min.
+	We need these for functions like waittill.
+	
+	__ref
+	A function that has a parameter modifier __ref will
+	pass values by reference. So only variable references,
+	indexer references, argument variable references,
+	and new variables can be passed. New variables
+	are declarations of variables as the passing of
+	of itself to a ref parameter, for example:
+
+	The function:
+		foobar (__ref baz) { baz = "foo"; }
+	Can be passed like so:
+		main()
+		{
+			foobar(newvar);
+			return newvar;
+		}
+	'newvar' is instantiated since it is an new identifier being passed
+	as a reference.
+
+	__min
+	Only one parameter in a function parameter list can have the __min
+	modifier. The __min modifier specifies that the modified parameter
+	be the the minimum point in which arguments are supplied. All function
+	calls must provide at least the minimum amount of arguments specified
+	by the position of the __min modified parameter, including the
+	modified parameter itself, for example:
+
+	This function:
+		getPlayerStats (playerName, __min gameMode, additionalArgs) { }
+	
+	Here getPlayerStats must provide both the playerName and the gameMode
+	arguments, if there are any calls where gameMode or playerName is omitted,
+	a compile error is generated.
+
+	__varg
+	This modifier can only be applied to the last parameter in the function
+	signature. It allows a variable amount of arguments to be passed. A __ref
+	modifier can be used in conjunction to specify that a variable amount
+	of reference types can be passed (all applicable to __ref modifiers).
+	The variable amount of arguments passed to the __varg type parameter
+	are stored inside the parameter as an array. Also note that __varg
+	parameters can be omitted entirely, and that only an empty array
+	will be stored in the parameter.
+
+	Example:
+		//Opens a file and writes strings given in the variable argument parameter 'data'
+		writeData(dest, __varg data)
+		{
+			file = openFile(dest);
+			foreach (str in data)
+				file write(str);
+		}
+
+	Using __ref also:
+		//Waits for data and stores the data in each element in dataOut, writing to references.
+		waitForData(src, __ref __varg dataOut)
+		{
+			data = getData(src);
+			if (data.size > dataOut.size)
+				sz = dataOut.size;
+			else
+				sz = data.size;
+			for ( i=0; i < sz; i++)
+				dataOut[i] = data[i];
+		}
+
+		//using the function waitForData
+		main()
+		{
+			waitForData('myStats', kills, deaths);
+			print('Your KD ratio is ' + (kills/deaths));
+		}
+[done]
+
+TODO:
+	Variables that are initialized in both primary in converse
+	are exposed to the previous stack frame.
+	For example:
+
+	if (foo)
+		bar = 0;
+	else
+		bar = 1;
+	baz = bar;
+
+	Through tracing, we know bar is guaranteed to be initialized,
+	so we expose it to the previous local frame.
+
+	We need all conditionals to prefer a new scope frame.
+	(actually redundant blocks do not declare new scope frames
+	unfortunately. Only conditionals.)
+[done]
+
+TODO: Detect unreachable code. StatementBlocks will hold the "HasReturn"
+flag to indicate the existence of a return statement. During parsing,
+this can prove useful encountering code after a return.
+
+TODO: Support for both inline and function pointers.
+	i.e:
+		a = [obj [[funcptr]]()];
+A solution was the fixup any loose bindings and checked
+if the EsPk was a function ptr call.
+Since we never pass inline arrays as function pointers.
+[done (i think)]
+
+TODO: Found out a few new things. 1) The multicase switch
+statement parsing was as lax as I thought. Statements
+are not allowed to be outside break and cases.
+2) Redundant statement blocks do absolutely nothing. New local
+frames are established inside conditionals.
+3) Segments, which is a sequence of code comprising of the
+statements under a switch label, have their own stack frames.
+In the iw engine, branches that have the same
+For example:
+switch(1)
+{
+	case 0:
+	break;
+	default:
+	a = 0;
+	break;
+}
+
+New local variable declarations appear from inside a switch
+statement with both the new declarations inside the default
+case and other cases.
+
+One method to gather these new locals is to segment the statements
+for each case, including segments without breaks. For example:
+
+switch(cond)
+{
+	case const1:
+	statement;
+	statement;
+	break;
+
+	case const2:
+	case const3:
+	statement;
+	break;
+
+	case const4:
+	statement;
+	case const5:
+	statement;
+	break;
+
+	default:
+	statement;
+	break;
+}
+
+const1: statement, statement, break
+
+const2, const3: statement, break
+
+const4: statement
+
+const5: statement, break
+
+default: statment, break
+
+After multiconditionals are segmented, we see
+that we have a default label. Indicative of
+post-local-frame variable survival. So now we
+can trace any new variables that need to be
+merged by saving the stack frame for each
+segment and merging them with the final default
+label. Don't forget, never assume the default
+label is always the last case.
+
+switch(cond)
+{
+	case const1:
+	var = "foo";
+	break;
+
+	case const2:
+	case const3:
+	var = "bar";
+	break;
+
+	case const4:
+	var = "baz";
+	case const5:
+	var = 4;
+	var2 = "foa";
+	break;
+
+	default:
+	var2 = "nope";
+	var = "nope";
+	break;
+}
+
+We can see here that we have the two variables var2 and var to
+be exposed to the next higher local scope.
+
+TODO:
+Redo references. We should use more abstract references that designate
+an item in the local frame rather than the current method of referencing
+the location of its initialization.
+
+We come across the issue of multiple initialization sites, for example
+there are two  sites of variable initializing in conditional initializations:
+
+foo(condition)
+{
+	if (condition)
+		value = true;
+	else
+		value = false;
+	return value;
+}
+
+In the two branches, we compare both individual local frames (though on the same level)
+and find common initializations and bring them to the conditional statements current
+local frame. so that it seems like:
+
+foo(condition)
+{
+	value = undefined;
+	if (condition)
+		value = true;
+	else
+		value = false;
+	return value;
+}
+
+Currently I have it where the only designation of a VIS (variable initialization site) for
+a variable is located in whatever local-frame came first. So here the variable reference
+located in the assignment of the true/primary branch has a null source field. Source fields
+for varrefs indicate the location of a VIS, and a null source fields indicate the actual
+site of initialization.
+
+Since there are multiple VIS's through conditional/multi-conditional guaranteed execution,
+we cannot rely on a single site basis. A good solution is to treat all left-value varrefs
+in assignments indiscriminently, and coming across the first would-be VISs as actual
+sites of initialization to the scanner but assigning the sources to point to the local
+varref in the frame rather in the code. To do that we simply keep track of a pointer
+for every varref to a local frame. And correct them on multi-VIS types. First we also need
+to keep track of frames. But where to keep the local frames? We have frames on function
+definitions for the top frame and statements under conditionals. Hm, they're all
+statements, so let's put them there, because you know, if you put them in conditionals,
+how are you supposed to reference them in both primary and converse branches? Better
+to put them in the branches instead as statements.
+
+TODO:
+	Major changes with local frame elements. Check the VarUnRef type function usage
+	to fix any potential reliance on the LastDuplicate for last unresolveds. They should
+	use the newer one.
+[done (i think)]
+
+TODO:
+	Biconditionals are missing all reference fixes. Solution would be to keep track of
+	both varref's target frame and a target frame's varrefs.
+[done]
+
+TODO [revising]:
+	Have multiconditional just represent itself segmented. It's much easier this way, also
+	we can keep a consistent local frame. Because multiconditionals have no shared uniform
+	local frame.
+
+	[revised]:
+	Actually, this breaks from traditional switch statements. To the programmer,
+	switch statements are just large more managed sequences of code with labels.
+	All sharing the same local frame.
+
+	But we've been giving each case a local frame because of wanting to find
+	the most persistent variable and have it merged to the next higher frame
+	when there is a default label available.
+
+	But in retrospect, this method of scanning in MCs is valid in that a local frame
+	is shared to save memory across cases and that cases must never rely on
+	another case's results. Much like ordinary jump labels themselves:
+
+	a = undefined;
+	if (c == 0)
+		goto label_0;
+	if (c == 1)
+		goto label_1;
+	if (c == 2)
+		goto label_2;
+	goto default;
+
+
+	label_0:
+	a = 0;
+	label_1:
+	a = 1;
+	label_2:
+	a = 2;
+	default:
+	a = 3;
+
+In expanded code, a switch statement's case blocks must never rely on another case's fauxed locals. The fact
+that only one case is chosen, it is illegal to assume more one case is chosen, where that assumption is
+one that would have to be made if relying on another case's results.
+
+So the task here is to treat each case as if it's in its own frame.
+
+	So we must continue as planned and extract all the common varrefs that include
+	the one in the default case. After that, update all the references in each case
+	to the merged higher local.
+
+[done]
+
+TODO:
+	have the dual init handling for MCs do some for non-dual init handling, i.e. no default case.
+[done]
+
+TODO:
+	Emit errors on unreachable code. This can be done by having an assignment block keeping track
+	of the last return statement. If more statements are added when there exists a last
+	return statement, we can emit an error gracefully.
+
+	Actually, what I want to do is pass a special little structure to describe
+	expression sequence scanning. This will be useful for detecting unreachable code.
+			 
+	For example: You scan a switch statement, somewhere in that switch statement
+	is a biconditional with both branches returning. By passing a persistent
+	structure, we can trace end points in the code graph.
+
+	We use to variables in the persistent structure with these variables
+	to determine whether the statement sequence is guaranteed to execute
+	or is consistent to return.
+
+	enum ReturnRating:
+		DoesNotReturn, //Does not contain any return statements
+		CanReturn, //Has a return statement
+		AlwaysReturn //Statement will always return
+
+	Like so:
+
+	foo(args)
+	{
+		switch (args)
+		{
+			case 0:
+			return 1;
+			case 1:
+			break;
+			default:
+			return 1;
+			break;
+		}
+		if (args == 0)
+			return 0;
+	}
+
+	Here the first switch statement is not guaranteed to return because case 1
+	does not return, so the entire statement cannot be treated as a return
+	guarantee, so it has a rating of CanReturn.
+	The next statement, we conditionally return. Which is alright, but
+	we cannot treat it as a return-guarantee because there is no converse
+	to guanrantee a return, so it is also a CanReturn.
+	Now we reach the end of the statement, in the sequence we've kept track
+	of whether we have any CanReturns and found out that since we have
+	returns but do not definitely return, we have an inconsistent statement
+	and so we can emit an error or warning saying there's a function
+	that will possibly return undefined.
+
+TODO:
+	Assign priorities for binary operation to specify binding strength.
+
+MAYBE:
+	Have function references of global functions?
+
+TODO (IMPORTANT):
+	Implement path script lookup. Remove the base and source path idea
+	and have just one unified path script lookup thing.
+	i.e:
+	Include directories: /mod, /base, /missing
+	A script includes another script called _foo.gsc in maps\mp and we can't find it.
+	We try /mod/maps/mp/_foo, /base/maps/mp/_foo and still can't find
+	anything, so we can use the missing directory to create the missing crap.
+
+	One thing to be very careful though is when finding a match, we need to find a way
+	to store this information in a unified manner that can be used when the root script
+	paths modify another.
+
+	For example, if someone creates a mod, that mod will modify a certain scriptbase.
+	We want to retain this modularity when the mod is fully compiled.
+
+	Suppose that this mod modifies bits and pieces of this module located in the
+	scriptbase. It adds additional functions and changes a few to the original
+	functions. These new functions are referenced in the mod and contain references
+	to functions located in the module itself. So during compilation of the mod, it notices
+	that the module that has been overriden has references to the scriptbase that has
+	no source in the modbase. This reference is a direct function call that exists
+	in an include of a module that does exist in the modbase. Of course at the beginning
+	of the compilation of the module, the compiler detected that the include did not exist in
+	the modbase and the logical representation of the module's code graph should reference
+	the scriptbase already in the module's module-lookup list.
+
+	This has severe complications in the final compiled representation of the modbase. The
+	modbase must take into consideration of its modularity and all scriptbase references
+	must be setup and tabled in such way that can be resolved if they are ever to be executed.
+
+	Here is a clear example of this issue:
+
+	Modbase:
+		bar.gsc:
+			function0()
+			{
+				return tools::toolfunction();
+			}
+			functionK()
+			{
+				return tools2::toolfunction2();
+			}
+		foo.gsc:
+			include tools;
+
+			function1()
+			{
+				return toolfunction();
+			}
+
+			function2()
+			{
+			}
+
+	Scriptbase:
+		foo.gsc:
+			include tools;
+			
+			function1()
+			{
+				tools::toolfunction();
+			}
+
+		tools.gsc:
+			toolfunction()
+			{
+				return 0;
+			}
+		tools2.gsc:
+			toolfunction2()
+			{
+			}
+
+	Here we see in the modbase, foo.gsc attempts to include a module called
+	tools that does not exist in the modbase. The compiler should already
+	be given the path to the scriptbase as a second root path and should
+	increment its basepath lookup to the scriptbase and find that it does
+	exist.
+
+UPDATE:
+	Apparently dual initialization occurs in multiconditionals
+	only when the variable is initialized in one segment with a break.
+
+	example:
+
+foo(){}
+main()
+{
+	switch("str")
+	{
+		case "str":
+			a = 0;
+			break;
+		case "as":
+			a = 0;
+		default:
+			a = 0;
+	}
+	a foo();
+}
+[done]
+
+UPDATE: Dual initialization occurs inside for loop statements only if
+the condition expression can be inline-evaluated to true. Guaranteeing
+a dominate block.
+
+TODO: We need to redo dual initialization in non-multiconditionals
+where we have to take into account a guaranteed-sequence.
+
+A guaranteed sequence is a sequence of statements that will
+always execute no matter what (disregarding endons) because
+of assurance that the selected sequence will not return or break
+its linearity.
+
+Scanning a gsequence is useful in that it takes into account
+returns and breaks, and this information can be used to
+migrate locals in the sequence that are assured to be initialized
+to the next higher frame.
+
+UPDATE/TODO: Hex isn't supported, but support it anyways and make it configurable.
+[done]
+
+UPDATE: Inline evaluator for static boolean expressions does not use constants.
+
+UPDATE/TODO: Constants are not implicit through includes, constants are always relative to
+the current script. Though make this configurable..
+[done]
+
+TODO: Make neat word breaking algorithm with support for indentation for nicer
+formatted help info text.
+[done]
+
+UPDATE: Forgot that duplicate function checking occurs in includes also. Debug to see if it
+works.
+[done]
+
+TODO: Need to produce an efficient inline evaluator.
+
+To do so, we should try to group operations and segregate those specific
+types of operations of a primitive basis.
+
+The key to evaluating is the fast method mapped structure, for each instance
+of variance that's described through integral enumerations, we can use
+those enumerations as indices to map to a method map. To do this efficiently,
+inline evaluation works through breaking down points in the expression
+graph and operating on them seperately until one or two primitives
+are available for exposure to a higher graph segment.
+
+What defines the types of primitives also define the types of inline values
+that can be assigned. For example, if we had to assign all possible value
+types to a variable without going into an expression graph, we can list them
+like so:
+
+var = 1;
+var = "yeah";
+var = &"asd";
+var = (1,2,4);
+var = [1,2,3];
+
+Of course an inline evaluator's sole purpose is inclined to evaluating arithmetic
+type expressions so we ignore the obvious primitives when performing arithmetic
+like meta-strings.
+
+For numbers:
+
+Apply_Numbers(Expression numA, Expression B)
+Apply_Numbers_Arith(Constant A, Constant B)
+Apply_Numbers_Bit(Constant A, Constant B)
+
+
+One way to simplify the process is to take advantage of associative operations
+and provide type-specific processing for just one side.
+
+Actually that's horrible, easiest way is to define all operations for each type:
+
+Integer:
+
+b domain: (int, float, string)
+
+add(a, b): a + b
+sub(a, b): a - b
+mul(a, b): a * b
+div(a, b): a / b
+add_str(a, b): (string)a + b;
+shl(a, b): a << b
+shr(a, b): a >> b
+and(a, b): a & b
+or(a, b): a | b
+xor(a, b): a ^ b
+mod(a, b): a % b
+
+Float:
+add(a, b): a + b
+sub(a, b): a - b
+mul(a, b): a * b
+div(a, b): a / b
+add_str(a, b): (string)a + b;
+
+String:
+add_str(a, b): a + b
+add_int(a, b) a + (string)b
+add_float(a, b) a + (string)b
+add_truple(a, b) a + (string)b
+
+Truple:
+add_truple(a, b): a + b
+sub_truple(a, b): a - b
+mul_int(a, b): a * b;
+mul_float(a, b): a * b;
+mul_truple(a, b): a * b;
+div_int(a, b): a / b
+div_float(a, b): a / b
+div_truple(a, b): a / b
+
+I find it's extremely repetitive to check for B and etc, perhaps a static or instance
+method in the operation's base class that can help me with this...
+
+It's a good idea to use an abstract class to map out all the possible operations that can
+be performed on different value types, and defining classes that implement that operation mapping
+class to specific datatype operations. Since it seems repitive and wasteful to constantly cast
+the A operand supplied as a parameter in an operation, we could use an internal object
+declared in the specific instance of the specific datatype's operation-mapping class that is
+specific to the datatype, without having need to constantly cast an Expression object
+to its assumed type. Only issue with this is that though passing the A operand as a parameter
+makes the operation recursable, so operations can call themselves and safely save operands
+from higher calls. However, something like this:
+
+class IntegerDataType : DataTypeOperation
+{
+	public Constant Operand_A;
+	public override add(Expression B)
+	{
+		IE.Success(Operand_A.InternalValue as int + B.AsConstant().InterValue as int);
+	}
+}
+
+Note this example doesn't take into consideration the possibile types of B.
+
+We can see here that IntegerDataType::add cannot recursively call itself because it could not retain and
+store Operand_A within it's own call constant, each call would share and invalidly use Operand_A, destroying
+the original value of Operand_A before a recursive call. A solution would be to instantiate an instance
+of IntegerDataType to perserve context in each call, but would be much slower and against the concept
+of an immediate evaluator.
+
+Luckily, the current graph reading model of the inline evaluator recurses upon a binary operation, meaning
+within a binary operation, if another binary operation is one of its operands, it will recurse. And since
+all DTOMs (Data Type operation mappings) are atomic evaluations, the binary operation recursion follows
+in parallel, so an expression like this:
+
+((4 + 4) / (5 * 6)) + 17
+
+Which graphs out like so
+
+17
++
+(
+	(
+		4
+		+
+		4
+	)
+	/
+	(
+		5
+		*
+		6
+	)
+)
+
+A BO read would take the operands 17 and ((4 + 4) / (5 * 6)),
+since ((4 + 4) / (5 * 6)) is not a constant, another BO read
+occurs recursively until it reaches (4 + 4), allowing no
+context perservation in a DTO. We would need context in DTOMs
+perservation only if DTOs performed complete graph recursion
+where the operation handles every single data type, includings
+BOs.
+
+Okay nevermind, we can just setup an internal stack where
+everytime we need to set a new A operand we push the current
+onto the stack and pop after we call the desired operation.
+
+But honestly, I still don't see when we'll come across this
+problem...
+
+Another good structuralized way to do this is to creating more
+defined mappings. We can do it two ways, either map out each operation
+that includes an additional dimension of mapping to each supported
+data type, or vice-versa where each data type had an additional
+dimension of mapping to each operation.
+
+Here there is no significant variance that would benefit
+from this structure, but this would greatly organize the
+development of the evaluator.
+
+Integers:
+	Operates with:
+		Integers
+		Truples
+		Strings
+		Float
+Truples:
+	Operates with:
+		Truples
+		Floats
+		Integers
+Strings:
+	Operates with:
+		Integers
+		Truples
+		Floats
+		Strings
+Float:
+	Operates with:
+		Floats
+		Integers
+		Truples
+		Strings
+
+[done, about a well completed IE]
+
+UPDATE (Important):
+	IE needs to tell the difference between invalid operations that will stop
+	an inline-evaluation and one that triggers as a semantical error.
+	For example this erroroneous expression:
+
+	a = (1, 2, 3) == "foo"; //Will fail to compile under the error "None-matching types"
+
+	IE has no mapping of an equality of strings for the truple type and 
+	will stop evaluating, meaning this expression cannot be used to detect
+	migratable locals and other code path-finding hueristics. The COD
+	gsc engine will produce an undefined result during runtime if
+	"foo" was stored and used as a variable instead of an immediate
+	constant. However, leaving as is, the COD gsc engine will detect
+	this as an invalid operation of types and will fail to compile.
+
+	IE as of now maps out all types that a single type is able to operate with,
+	and maps those operations correspondingly. When a type has no binary operation
+	support for a particular type, is fails with a result-type of InvalidOperation.
+
+	This seems fine as we can just throw errors ourselves upon an InvalidOperation
+	for an evaluation failure that is also a semantic error.
+
+
+
+
+	For example, take the following loop that initialized a migratable variable:
+	
+		for ( ; "foo" == "foo" ; )
+		{
+			variable = "bar";
+		}
+		baz = variable + "boo";
+
+	*variable* is migratable will give *baz* the value "barboo". This is possible because
+	of inline evaluations that detect *"foo" == "foo"* is true. But if *"foo" == "foo"*
+	turns into:
+
+		
+
+UPDATE:
+	String to number comparisons will throw an error in the COD script engine.
+	It threw errors on explicit constant comparisons. But did not throw errors
+	when comparing runtime objects of those types, the result was simply undefined.
+
+	Interesting, found out that number comparisons in *runtime* are allowed with truples. The equality
+	of each item is tested with the single item and each result is ANDed.
+	x == (x,x,x) is true :/
+
+UPDATE:
+	All data type operations on truples must have evaluated items before performing any.
+	If they are unevaluated due to errors, the truple itself is a failure.
+
+UPDATE:
+	The cod gsc engine was done so bad that when comparisons between truples (greater/less than)
+	are detected, meaning such an operation isn't supported, the error states that
+	the a "vector and vector are not matching types". Which meaning the internals use
+	a type-operation mapping that does not have an entry for such an operation, but
+	erroroneously states the types do not match but actually means the operation
+	is not valid.
+
+UPDATE:
+	All references are considered runtime-required. (VarRefs, Indexers, Accessors, FunctionRefs)
+
+UPDATE (Important):
+	Any datatypes except an integer tested as a top-most condition has an undefined
+	trueness. Meaning conditions such as these:
+		if ( (1,2,3) )
+			statement;
+
+		while ( "yes" )
+			statement;
+	Will be evaluated as undefined. But this isnt:
+
+		if (0.1)
+			statement;
+
+		if (2)
+			statement;
+
+TODO:
+	Remove NOT unary operator support as the IE interprets this operation
+	as invalid.
+[done]
+
+UPDATE:
+	IE cannot evaluate a boolean binary expression.
+	1 || 1
+	2 || "af"
+
+	These expressions cannot be inline-evaluated apparently and will
+	refuse to hold true.
+
+UPDATE:
+	Odd that single branches are not allowed to be preemptively evaluated for dominance,
+	only loops and full dual branch if statements. Then again it makes so sense to have
+	a one branch side of initialization:
+
+		if (true)
+			val = 1;
+		func(val);
+
+	This will fail, by rules of semantics we should never assume local variable
+	migration in a single branch, as it indicates and suggests *val* is restricted
+	to its natural scope. In other words, it makes no sense to initialize a variable
+	under a single condition with no supporting antecedent-initialization, which
+	would suggest that its initializations variates in two ways rather than one or
+	none at all.
+
+UPDATE:
+	Boolean values directly translate and operate on an integer basis. Though
+	best thing to do is to create an entire DataType instance of this.
+
+
+
+TODO:
+	Though non-conformative, provide support for statementless loops like so:
+
+		while (expr);
+
+		for (expr);
+
+	Warn for these:
+
+		if (expr);
+
+		foreach (expr);
+[Done] I think, I can confirm because there is support, but not sure because it's been so long.
+
+TODO: Implement Scope Types in the DOM Parser.
+
+By default the DOM Parser reads tokens as an entire module. Additional scoping
+modes are useful for debugging. To understand better how to implement two additional
+scoping modes: Function and Expression, we first have to analyze how each scope is
+arrived and wrapped up.
+
+Functions:
+Functions begin by reading a function signature that consists of a function name and
+a parameter list.
+After which, upon an opening brace, a root statement block is created and is assigned as the
+current statement, then the parser goes into function mode, reading statements and expressions.
+
+A function definition ends when arriving upon an ending brace, having no in-process statements
+or expressions and having a statement stack size of 0.
+
+Expression:
+An expression begins as a statement or an expression itself. An expression ends at the end
+of a statement, an argument seperator or group ending parenthesis.
+
+[done]
+
+UPDATE: The primary conflict of pointer invocation syntax and inline syntax is nesting inline arrays
+
+For example:
+
+	a = [[1,2],[3,4]]
+
+An array of two arrays of two elements. The problem is distinguishing between a pointer invocation
+and a nested inline arrays. What IS possible however is heuristics, under particular circumstances
+we can deduce that code wants to express nesting with a comma in the pointer expression part of a
+pointer invocation. For example
+
+	a = [[1
+
+At this point the expression state should look like this:
+
+Es: a=?, [[?]]()
+Ce: 1
+
+Upon encountering a comma, we restructure like so:
+
+Es: a=?, [?], [1]
+Ce: null
+
+But we're not going to do this, because this only deduces nesting through an indication of a comma,
+so deduction only occurs when there are multiple elements in the nested array. So something like this:
+
+a = [[]];
+
+Which seems syntactically valid, but would require that the parser notice an immediate end of the statement,
+and to that would add extra logic into the immediate resolver as ';' signifies an expression seal.
+
+TODO: Auto conversions for division and multiplication operations.
+UPDATE: Apparently division forcefully converts the result into a float, despite whether the operands are
+both fully integral.
+
+TODO: Implement operator precedence.
+[done]
+
+UPDATE: How expression grouping should work with ordering:
+
+Let's look at this expression first:
+
+	1 + 1 / 2
+
+There are two ways to look at this, first is the sum of the
+first two constants over two or the sum of the first constant
+with the quotient of the other two constants.
+
+A linear graph building process looks like this:
+
+
+1) Es:, Ce: 1
++) Es:1+?, Ce: null
+1) Es:1+?, Ce: 1
+/) Es:(1+1)/?, Ce: null
+2) Es:(1+1)/?, Ce: 2
+EOF) Es:, Ce: (1+1)/2
+
+Where as ordered would look like this:
+
+1) Es:, Ce: 1
++) Es:1+?, Ce: null
+1) Es:1+?, Ce: 1
+/) Es:1+?,1/?, Ce: null
+2) Es:1+?,1/?, Ce: 2
+EOF) Es:, Ce: 1+(1/2)
+
+The difference is that upon another operator, '/' supercedes '+'
+and instead of wrapping Ce to 1+? and completing Ce to 1+1,
+it leaves the operation under Es and pushes 1/?.
+
+Linear: Immediately wrap EsPk with Ce and use the new Ce as the first operand for '/'.
+
+Ordered: Continues to suspend EsPk and pushes a new '/' operation into Es, leaving
+the original EsPk unwrapped as 1+? and uses Ce as the first operand to the '/'
+operation and readying Ce for the next operand. This is the usual operation when
+the immediate resolver clears Es.
+
+UPDATE: An expression that is evaluated to false by IE raises an error in the COD GSC
+as block of code is inaccessible due to an always false condition.
+> Implement this.
+
+TODO:
+Expressions known to not work:
+
+	a.a[b++a]
+
+Compiler outsmarted me, was actually interpreted as:
+	a.a[b++ a()]
+Reason: A full expression, b++ in this case, followed by an identifier indicates a function
+call with a supplied self argument.
+[done]
+
+TODO: Packing will not work with that kind of expression. Since this only really occurs
+on a increment/decrement operator, we can just check for that.
+[done]
+
+TODO: Other expressions needs bool too.
+[done, just removed the type all-together and convert into int]
+> Operations with boolean operands are implented where they yield ints
+
+
+TODO: Make IE fully functional for constant resolves.
+UPDATE: Also make it support constantdecl lookups.
+[done]
+
+
+TODO: Make param vars aware of __ref modifiers (not gonna be done for a while)
+> When a runtime is implemented, varrefs are are refs need to be realized. Normal non-__refs have allocated
+> stack space for each object in runtime, however references for *other* objects *need* this distinction.
+
+NOTE: IE requires that all expressions in the expression graph be content-evaluated first so that it may
+consume our precious InternalValues!
+
+NOTE: One way to seamlessly include invalid operation checking on constants would be to check on each
+scan whether the expression is a binary or unary expression then do some IE-EVALS, seems legitimate.
+
+
+TODO: In AddError, a null overrideToken but non-null override location means no token at all. Update somehow...
+[nevermind, was never broken in the first place]
+
+TODO: Check ALL inline array restrictions and correct those that will also assume empty arrays as a perceivable
+threat.
+[done, there was just one]
+
+TODO: Can inline arrays be used alone as expressions, suspecting not so.
+[nope, we caught it]
+
+TODO: Don't know if inline arrays in constants are supported for MW3, which by current option configuration are suppose
+to fail. :/
+[done, inline arrays not not considered primitives of other declared-constant references]
+
+TODO: Make PropConverter for compiler options support all other attributes also. Aw fuck it search for type Attribute and
+add all that shit yo!
+[done]
+
+TODO: Fix formatting for some conditional regurgatations.
+[later]
+
+TODO (Important): Add support for empty statements after else's.
+[fixed, odd I don't remember adding a boolean field that sets when a null-able statement is set as the converse for biconds,
+whenever it was, it helped]
+
+TODO (IMPORTANT): We can have empty statements after ELSE's but regurgated the ELSE's are outputted too.
+[done, it was just an Express formatting bug. Seems to be fixed because I can't reproduce the elses.]
+
+TODO: Add a quick code loader to quickly try out stuff for the GscCodeTest.
+[done, but needs improvements]
+
+TODO: Are immutable classes assignable or readable in anonymous functions?
+UPDATE: Interesting observation. Anonymous/lambda functions have access to their method's
+stack frame, like they should. In this test, I allocated and created a object and assigned it to a local
+variable in the constructor of a form. After assigning the local, I create the lambda
+and assign it as an event that occurs by user input, so the lambda executes way after the constructor
+does. In the lambda, it reads an integer field in the object I allocated, but unsure of if whether
+the object was still assigned to that local variable, I decided to breakpoint the lambda and fire an
+event to invoke. I find that the object is still there and the lambda works as it should.
+
+Here is the assembling listing for the anonymous function:
+
+00000000  push        ebp 
+00000001  mov         ebp,esp 
+00000003  push        edi 
+00000004  push        esi 
+00000005  push        ebx 
+00000006  sub         esp,3Ch 
+00000009  mov         esi,ecx 
+0000000b  lea         edi,[ebp-38h] 
+0000000e  mov         ecx,0Bh 
+00000013  xor         eax,eax 
+00000015  rep stos    dword ptr es:[edi] 
+00000017  mov         ecx,esi 
+00000019  xor         eax,eax 
+0000001b  mov         dword ptr [ebp-1Ch],eax 
+0000001e  mov         dword ptr [ebp-3Ch],ecx 
+00000021  cmp         dword ptr ds:[005F19A4h],0 
+00000028  je          0000002F 
+0000002a  call        66DB43FF 
+0000002f  mov         dword ptr [ebp-44h],0 
+00000036  xor         edx,edx 
+00000038  mov         dword ptr [ebp-40h],edx 
+0000003b  nop 
+				int a = ta.a + 1; 
+0000003c  mov         eax,dword ptr [ebp-3Ch] 
+0000003f  mov         eax,dword ptr [eax+4] 
+00000042  mov         eax,dword ptr [eax+4] 
+00000045  inc         eax 
+00000046  mov         dword ptr [ebp-40h],eax 
+...
+
+Here is the listing for the test object instantiation:
+
+			var ta = new t();
+00000192  mov         ecx,695818h 
+00000197  call        FFC6FBC0					;Call allocator
+0000019c  mov         dword ptr [ebp-7Ch],eax	;Assign new memory to 7C
+0000019f  mov         ecx,dword ptr [ebp-7Ch]	
+000001a2  call        FFC8AE58					;Call constructor on shared ta
+000001a7  mov         edx,dword ptr [ebp-4Ch]	;Assign EDX the object pointer at 4C
+000001aa  mov         eax,dword ptr [ebp-7Ch]	;Assign EAX ta pointer
+000001ad  lea         edx,[edx+4]				;Get pointer to memeber of 4C object
+000001b0  call        66E20B50					;Call function where EAX=ta and EDX=?+4
+			var ta2 = new t2();
+000001b5  mov         ecx,695888h 
+000001ba  call        FFC6FBC0					;Call allocator
+000001bf  mov         dword ptr [ebp-80h],eax	;Assign new memory
+000001c2  mov         ecx,dword ptr [ebp-80h]
+000001c5  call        FFC8AE68					;Call constructor
+000001ca  mov         eax,dword ptr [ebp-80h]	
+000001cd  mov         dword ptr [ebp-44h],eax	;Copy pointer object to some var 44h
+			ta.a = 3;
+000001d0  mov         eax,dword ptr [ebp-4Ch]	;
+000001d3  mov         eax,dword ptr [eax+4] 
+000001d6  mov         dword ptr [eax+4],3 
+			ta.a = 4;
+000001dd  mov         eax,dword ptr [ebp-4Ch] 
+000001e0  mov         eax,dword ptr [eax+4] 
+000001e3  mov         dword ptr [eax+4],4 
+...
+
+I believe there are two parts to the initial stack frame. And that
+any objects that are referenced are saved elsewhere and are
+used by utilizing extra logic in the inline function to setup
+saved outer-scope variables.
+
+Welp, MSDN does confirm my oberservation:
+
+MSDN (Lambda Expression Variable Scopes)
+	Lambdas can refer to outer variables that are in scope
+	in the enclosing method or type in which the lambda is defined.
+	Variables that are captured in this manner are stored for use
+	in the lambda expression even if variables would otherwise go out
+	of scope and be garbage collected. An outer variable must be
+	definitely assigned before it can be consumed in a lambda
+	expression.
+
+Could implement this in gsc. 
+
+	main()
+	{
+		g = spawnstruct();
+		g.h = 10;
+		a = ?(a,b,c){ return a + b + c * self + g.h;  };
+		i = 8;
+		i [[a]](1,2,4);
+	}
+
+I'd have to turn FunctionDefinition into an expression though, but I don't have to,
+make its own AnonymousFunction class, could be interesting.
+One interesting thing is I could get rid of the '?' and have the it parse normally
+as a truple then on an opening brace, check if each item in the truple are normal
+variable references and push a ready anonymous function, saving lots of logic. But there
+would be logic for variable number of parameters, since truples are very strict at all stages of
+its construction, there is preemptive logic put into detecting malformed truples.
+
+	main()
+	{
+		level.onDamage = (){};
+	}
+
+[done]
+> The acknowledging part, not the actually implementation of anonymous/closure in the compiler.
+
+UPDATE: If we are to use the inline evaluator in the context anaylzation stage and if we use the IE logic
+after the primary scan logic body in the Scan method, we could be doing redundant evaluation. For example:
+
+	1 + 1 / 2
+
+is spit into
+	(1 + 1) / 2
+
+First we recurse to "1+1", and before we return from this recurse, we perform an inline evaluation and
+return success. Afterwords we evaluate "(1+1)/2" again and find that we are performing evaluations again
+on "1+1" as a delegation of scanning.
+
+A simple solution is to only perform scans on places where non-statement expression graphs would root themselves.
+
+For example:
+
+a = 1+1;
+
+We would perform evaluation after the right value is scanned succesfully.
+
+Here are a list of places to scan:
+	Right values of simple assignments
+	Each item in an argument list
+	Each item in an inline array
+	The index expression of an indexer
+
+> Conflict (in the form of redundancy) from the Context Analyzation stage (building contexts/hueristics) and IE
+> (performing operation validations (OVs), IE is used in CA for hueristics however)
+
+TODO: If we decided to do operation scans on an expression such as this:
+	a / 2 + 3 + 0.2
+And decided we were only going to scan unaries and binaries, we would also be
+redundant in that the operation-checking would stop on the variable "a" and
+return as a RuntimeRequire error, bubbling up the recursed call stack and leaving
+out "2" on the right side of "/".
+
+We can solve the operation-validation ignorance by tweaking the IE to accept RRs (RuntimeRequired)
+as Successes, but this still does not fix the redundancy issue as there are more binary operations
+located deeper in the expression graph that the scanner will encounter and will dispatch the unneeded OVs
+(Operation Validations).
+
+One possible solution is to utilize the tweaked IE and only scan with regard to a bool-switch that
+indicates whether the scanner is currently under a unary or binary operation. For example:
+
+	a = func(1 + var * 4);
+
+On scanning the invocation of "func"'s first argument, since we're under a binary operation
+[This inherently excludes assignment operations as they are of different class] we can OV
+this instance, and all other instances will set the operation bool-switch indicator that will
+immunize all OVs.
+
+TODO: On every stopping instance of an RR, implement passive logic to continue expression item
+continuation.
+Example:
+	a = a + func( [ 1 + a / 4, 4 ] )
+
+
+A problem with this expression above is that the function that holds the expressions in
+the inline array that's passed as an argument is not scanned. Since the rule is that an expression
+is OVed only when the operation-bool-switch is false and the expression is a unary or binary
+operation.
+
+	Scan procedure:
+		
+		1) If not OV_Lock and expr is operation
+			then set OV_Lock
+		2) Normal Scan procedure
+		3) If expr is operation and resolved, and OV_Lock is true
+			then perform OV on expr and set result to expr's 
+
+
+TODO: IE can have a constant lookup list to treat all variable references in the expression graph as
+constant names. CodeDOMParser uses this for constant evaluation before the context analyzer stage.
+
+Now the problem is that we want to use in the context analyzer to check for invalid operations againsts
+immediate constants and declared constants. But the option to enable constant lookup treats *all*
+variable reference as declared constants and any variable references that aren't constant names will
+return a UnkownConstant evaluation error.
+
+[fixed]
+
+TODO: Not sure if this is done already or already logged in the journal, but calls to functions that have
+reference parameters needs to assert that parameter references are always variable references.
+[fixed, they are indeed enforced in the CA]
+
+
+INFO: In the runtime, how does assigning a local referenced parameter work? If we pass an object, and its members
+are modified, that particular instance is never copied and so the original is modified via member assignment.
+However, integers/strings/floats modifed from their local variables simply change in-place where they're stored.
+If references where the same way, assigning a reference would change the actual pointer object to a number, instead
+of the referenced number.
+
+Take this:
+
+function(param1, __ref param2) {
+	number = param1;
+	number *= 4;
+	param2 = number;
+
+	return param2 + 1
+}
+
+[args: 2]
+resrv 3
+
+ldarg 0
+stloc 0
+
+ldloc 0
+ldci 4
+mul
+stloc 0
+
+ldloc 0
+stargr 1
+
+ldarg 2
+ldci 1
+add
+
+ret
+
+INFO: GSIL Runtime is composed of:
+	Global Object Store
+	Local Object Store per function
+	Working Stack for expression evaluation and argument passing
+	Resource Store for strings
+	Stack Frame (which also includes return address)
+
+TODO: Lookup functions in the CA that use a recursion stack as the last parameter need to be "internalized" so the ugly
+extra null parameter isn't visible.
+[fixed]
+
+TODO: Make all reference-source classes store the actual site of the call/usage. Not sure whether to keep variable-source-refs
+names though. If we keep them in a dict, we don't need them.
+[rejected, it's fine]
+
+TODO: Find a way to find the maximum depth of the local stack per function.
+[fixed, via CompleteFrame]
+
+TODO: If you're going to use a single-range local stack, you'll need to know how many unique local variables will be used.
+Also take into consideration, local variables that go out of scope.
+
+INFO: foreach statements with iterators can refer to previous local frames. If an iterator has the same name
+of a previously declared in previous in-scope frames, then it becomes a reference to that variable. If not, the iterator
+is exclusive in the foreach statement's scope.
+
+INFO: Arrays are not passed as references and are copied per element into a new array when assigning a variable to
+an array stored in another variable. Objects however are passed by reference.
+
+TODO: Add a warning when a foreach statement's iterator references a previously declared variable (local, arg, global).
+[fixed (you know, the iterator/key vr's didn't even have .Locations!)]
+
+INFO: Setting an element in an array to undefined effectively removes it as the iteration skips the undefined element,
+for both element and key (if array is associative)
+
+TODO: An initialization statement for a normal for loop is done within the scope of the statement that the for scope is located. So for
+a normal loop where "i" is assigned zero and looped up to a limit, that "i" will be the VIS of where it's first declared
+either before or at the initialization part of the for statement. It will continue to be in scope after the for loop. So make sure the initialization
+statement and the rest of the statements are scanned without entering into a new scope.
+[Already fixed, has this been mentioned somewhere earlier?]
+
+TODO: Implement an option to reuse local variables for two or more different scopes on the same level.
+
+TODO: New variables created from referenced-parameters should be placed at the entire scope of the function.
+[fixed]
+
+TODO: Add something in the CA to detect indexing constants. We can do that for some reason.
+[fixed, don't use IsEligibleForNewLocal, they're mainly used for new variable-references used in assignments]
+
+INFO: The GSIL had all these instructions to load reference-objects from global/stack/local/arg, but what if we needed support (despite the original COD GSC
+supporting it or not) we need to load references from indexing, accessor operations. If our model simply loads the address of the object or
+boxed constant, then we're fine.
+
+TODO: The IdentifyVariableReference function does take into account global variables. Why have we not supported this? We need to go to each usage of
+IdentifyVariableReference and see if we need to take into consideration whether the logic needs to be aware of global variables.
+[fixed]
+
+TODO: Why are we creating a new ReferenceSourceLocal for a local varref lookup? We never use it, we just use the frame stored in it to create another
+ReferenceSourceLocal later.
+[fixed, now it's just a the frame]
+
+TODO: Make IdentifiyVariableReference support "self"
+[fixed]
+
+TODO: Test to see indexing for accessors as array are prepared correctly in the test gui.
+[fixed]
+
+TODO: Use IE to eval declared constants to detect valid indexing on them.
+[fixed]
+
+TODO: The declared constant class seems to only hold one expression object representing the value of the constant, we primarly do this
+to reduce logic needed to regurgitate entire modules when deciding whether to evaluated store the result or the entire expression graph.
+So, the expression field of the delcared constant can be the original, however the evaluated result needs to be in its own field.
+So do that.
+[fixed]
+
+TODO: We use a stack of localframe objects to keep track of the scope of local variables. However, compilation requires a record of the
+all frames that went into scope, and I seemed to have put this information in the CA object and not appropriately in the ContextModule
+object instead. Also it's good that each statement has a "source" frame pointing to a list of locals for their respective scope, but
+we could also associate the comprehensive list of locals to the source function to keep track our locals linearly. So do this.
+[fixed, made it stay in CA and make an class that encapsulates the PerFrames complete frame listing. CompleteFrames gets assigned to
+each function definition after every function definition scan.]

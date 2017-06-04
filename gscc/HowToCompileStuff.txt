@@ -1,0 +1,23 @@
+This is a very early early build of a custom gsc compiler, geared torwards call of duty scripts.
+The primary compiling logic is a module, and testcompile.exe is the front end.
+
+What it can do:
+
+-Syntax checking and code graph building (graphs shouldn't concern you)
+	The compiler attempts to build a code graph so syntax is checked throughout.
+
+-Semantic checking
+	Though not complete yet, will build definition lists and check for coherence
+	and symbol existence. Due to the incomplete nature of GSC rips, you cannot
+	fully perform semantic checking unless you make your own global stubbings.
+	I've attempted to do so with my own and reduced 92K 
+-Advanced variable declaration hueristics
+	Variable declarations that parrallel in branches can be detected and further
+	semantical checking can be performed. This includes only if statements,
+	switch blocks. An immediate inline evaluator is required for loops, which
+	is partially complete and right now cannot be used.
+What it can't do:
+	-Compile into executable code of any kind or form
+	-Execute the code
+	-Check for never-executes
+	

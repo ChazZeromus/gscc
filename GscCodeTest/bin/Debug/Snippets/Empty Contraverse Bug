@@ -1,0 +1,9 @@
+main()
+{
+	if (1)
+		if (1)
+			stmt();
+		else; //Output should have this
+	else
+		stmt();
+}

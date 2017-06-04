@@ -1,0 +1,7 @@
+#set_global_declarative;
+
+#add_global("level");
+
+main(a)
+{
+}

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gscc_settings>
+  <!--Assignments as Expressions-->
+  <!--Allows assignments to be expressions. Enable statements such as these:
+<code>a = b = 0; g = g+=c;</code>-->
+  <Allow_AssignmentsAsExpressions>False</Allow_AssignmentsAsExpressions>
+  <!--Strict Accessors-->
+  <!--This will enforce the accessor operator to only work
+only on variables, accessors, indexes and function invocations.-->
+  <Enable_StrictAccessor>False</Enable_StrictAccessor>
+  <!--Expressions as Statements-->
+  <!--This will allow expressions to be statements. Your code shouldn't contains any expression
+statements, but this will allow them.-->
+  <Allow_ExpressionsAsStatements>False</Allow_ExpressionsAsStatements>
+  <!--Positive unary operator-->
+  <!--Enables the positive unary prefix operator +. Or the opposite
+of the negative operator.
+<code>while(+foo)</code>-->
+  <Allow_PositiveUnaryPostfixOperator>True</Allow_PositiveUnaryPostfixOperator>
+  <!--Inline arrays-->
+  <!--Allows inline array initialization. As opposed to the empty array specifier used
+to assigned empty arrays to variables. NOTE that inline arrays are discouraged because
+of conflicting pointer-function-call syntax and the double square bracket specifier.
+<code>a = [1,2,3];</code>-->
+  <Allow_InlineArrays>True</Allow_InlineArrays>
+  <!--Single Quote Strings-->
+  <!--Allows single quote strings. This is non-formative.
+<code>a = 'foobar';</code>-->
+  <Allow_SingleQuoteStrings>False</Allow_SingleQuoteStrings>
+  <!--Treat unknown chars as letters-->
+  <!--Treats unknown characters beyond normal alphabetic range as letters.-->
+  <Enable_TreatUnknownCharsAsLetters>False</Enable_TreatUnknownCharsAsLetters>
+  <!--Debug Code-->
+  <!--Emits code in enclosed in /# #/-->
+  <Enable_DebugCode>False</Enable_DebugCode>
+  <!--Empty Statements.-->
+  <!--Allows single semi-colons to act as empty statements.
+<code>for(;;);</code>-->
+  <Allow_EmptyStatements>True</Allow_EmptyStatements>
+  <!--Empty statements after conditionals-->
+  <!--In prominent C-like languages, statements like this
+are allowed <code>if(blah());</code> but are discouraged. Enabling
+this will enable that but will output warnings.
+You generally want this off for clean code.-->
+  <Allow_EmptyStatementsAfterConditionals>True</Allow_EmptyStatementsAfterConditionals>
+  <!--Volatile Call Modifier-->
+  <!--Enables the call modifier <code>volatile</code>. Volatile ensures a thread
+will not end while it is calling a function with the volatile-modifier.
+This is non-formative and is only available to the CFGSCC.-->
+  <Enable_CallModifier_Volatile>False</Enable_CallModifier_Volatile>
+  <!--Store resolved constants-->
+  <!--Whether to keep the expression structure if a declared constant has one.
+If not, the structure will still be evaluated but will not store
+the result for regurgatated auto-regenerated code. 
+<code>FOOBAR = 6; BOOBAZ = FOOBAR * 4 - 3;</code>-->
+  <Enable_StoreResolvedConstants>False</Enable_StoreResolvedConstants>
+  <!--Break on Error (DEBUG)-->
+  <!--This will break to a breakpoint on the first error if debugging
+is enabled with supplied source files for the compiler.-->
+  <Enable_BreakOnError>False</Enable_BreakOnError>
+  <!--Break on Warn (DEBUG)-->
+  <!--This will break to a breakpoint on the first warning if debugging
+is enabled with supplied source files for the compiler.-->
+  <Enable_BreakOnWarn>False</Enable_BreakOnWarn>
+  <!--Case Insensitive References-->
+  <!--By specification, this should be always on.-->
+  <Allow_CaseInsensitiveReferences>True</Allow_CaseInsensitiveReferences>
+  <!--Allow Default Case To Be Grouped-->
+  <!--Whether the default case can be grouped with other case expressions.-->
+  <Allow_GroupedDefault>True</Allow_GroupedDefault>
+  <!--Allow Empty Switch Statements-->
+  <!--Allows switch statements to have no statements and cases.-->
+  <Allow_EmptyMultiConditionals>False</Allow_EmptyMultiConditionals>
+  <!--Allow Global Function Override-->
+  <!--Allows globally defined functions to override locally defined versions. So non-scope
+specific calls will always invoke the global version.-->
+  <Allow_GlobalFunctionOverride>True</Allow_GlobalFunctionOverride>
+  <!--Search for constants in Includes-->
+  <!--Will search includes when referencing constants. This is non-formative.-->
+  <Enable_ConstantDeepSearch>False</Enable_ConstantDeepSearch>
+  <!--Parsing mode-->
+  <!--Whether to enable/disable certain code elements. Singleplayer scripts
+inherit all elements from multiplayer scripts and have various
+animation constructs such as the #animtree variable and other
+various directives. Note that directives must be known and defined
+to the compiler in order to check for directive semantic errors.
+<code>FOOBAR = 6; BOOBAZ = FOOBAR * 4 - 3;</code>-->
+  <ParsingMode>Multiplayer</ParsingMode>
+  <!--Support Hex Specifier-->
+  <!--Whether to allow hexadecimal numbers.-->
+  <Allow_HexSpecifier>True</Allow_HexSpecifier>
+  <!--Script-include recursion threshold-->
+  <!--The maximum depth of script includes.-->
+  <MaximumScriptDepth>50</MaximumScriptDepth>
+  <!--Support infinity-->
+  <!--Allows the infinity constant for floatings types.-->
+  <Allow_Infinity>False</Allow_Infinity>
+  <!--Warn pre-declared iterators-->
+  <!--Warns if an interator or key references an existing variable.-->
+  <Warn_PredeclaredIterators>True</Warn_PredeclaredIterators>
+</gscc_settings>
